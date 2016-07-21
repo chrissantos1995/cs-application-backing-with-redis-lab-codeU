@@ -67,8 +67,7 @@ public class JedisIndex {
 	 * @return Set of URLs.
 	 */
 	public Set<String> getURLs(String term) {
-        // FILL THIS IN!
-		return null;
+		return jedis.smembers(urlSetKey(term));
 	}
 
     /**
@@ -78,8 +77,19 @@ public class JedisIndex {
 	 * @return Map from URL to count.
 	 */
 	public Map<String, Integer> getCounts(String term) {
-        // FILL THIS IN!
-		return null;
+
+		// Make a map mapping URL to frequency of the term
+		Map<String, Integer> map = new HashMap<>();
+
+		// Get the set of URLs that contain term
+		Set<String> urlSet = getURLs(term);
+
+		// Iterate through URLs, and map the URL to the frequency of the term
+		for(String url : urlSet) {
+			map.put(url, getCount(url, term));
+		}	
+
+		return map;
 	}
 
     /**
@@ -90,8 +100,14 @@ public class JedisIndex {
 	 * @return
 	 */
 	public Integer getCount(String url, String term) {
-        // FILL THIS IN!
-		return null;
+
+		// Get the frequency of term in page pointed to by URL 
+		String response = jedis.hget(termCounterKey(url),term);
+
+		if(response.equals("nil"))
+			return 0;
+		else
+			return Integer.parseInt(response);
 	}
 
 
@@ -102,7 +118,30 @@ public class JedisIndex {
 	 * @param paragraphs  Collection of elements that should be indexed.
 	 */
 	public void indexPage(String url, Elements paragraphs) {
-        // FILL THIS IN!
+
+		// Make a TermCounter and count the terms in the paragraphs
+		TermCounter tc = new TermCounter(url);
+		tc.processElements(paragraphs);
+
+		// Create a Transaction which will be used to send commands to Redis
+		Transaction t = jedis.multi();
+
+		// Frequency of a term
+		String frequency;
+
+		for(String term : tc.keySet()) {
+
+			// Add the URL to the set of URLs associated with term in Redis
+			t.sadd(urlSetKey(term),url);
+
+			// Convert integer representing frequency to a String
+			frequency = Integer.toString(tc.get(term));
+
+			// Add the term frequency to the TermCounter map in Redis
+			t.hset(termCounterKey(url),term,frequency);
+		}
+
+		t.exec();
 	}
 
 	/**
@@ -229,6 +268,7 @@ public class JedisIndex {
 		loadIndex(index);
 		
 		Map<String, Integer> map = index.getCounts("the");
+		System.out.println("Using get for 'the': " + map.get("https://en.wikipedia.org/wiki/Java_(programming_language)"));
 		for (Entry<String, Integer> entry: map.entrySet()) {
 			System.out.println(entry);
 		}
